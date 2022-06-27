@@ -1,0 +1,12 @@
+.mailpoet-sync-wrapper table.mailpoet-subscribers {
+	max-width: 1024px;
+}
+
+
+.mailpoet-sync-wrapper .mailpoet-sync-btn-wrapper {
+	margin: 2rem 0;
+}
+
+.mailpoet-sync-wrapper .pagination-links a.page-numbers {
+    padding: 2px 6px;
+}
