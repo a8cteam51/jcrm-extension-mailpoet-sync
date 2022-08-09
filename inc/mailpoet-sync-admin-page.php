@@ -14,7 +14,14 @@ function mailpoet_crm_sync_custom_css() {
 
 function zbs_mailpoet_sync_init() {
 	global $wpdb;
-	$query = 'SELECT s.id, s.first_name, s.last_name, s.email, s.status, mps.id as synced_id, mps.last_status
+	$query = 'SELECT 
+				s.id, 
+				s.first_name, 
+				s.last_name, 
+				s.email, 
+				s.status, 
+				mps.id as synced_id, 
+				mps.last_status
 		FROM ' . $wpdb->prefix . 'mailpoet_subscribers AS s 
 		LEFT OUTER JOIN ' . $wpdb->prefix . 'zbs_mailpoet_sync AS mps 
 		ON s.id = mps.mailpoet_subscriber_id';
@@ -22,12 +29,17 @@ function zbs_mailpoet_sync_init() {
 	// Submitted as $_POST means we will do a sync first.
 	$start_sync = isset( $_POST['startsync'] ) ?: null;
 	if ( $start_sync ) {
-		zbs_mailpoet_start_sync( $query );
+		$query_where_synced_is_null_or_changed = $query . ' WHERE mps.id IS NULL OR s.status COLLATE utf8mb4_unicode_ci != mps.last_status';
+		wp_clear_scheduled_hook( 'jcrm_mailpoet_sync_scheduled_hook' );
+		wp_schedule_single_event( time() - 60, 'jcrm_mailpoet_sync_scheduled_hook', array( $query_where_synced_is_null_or_changed ) );
+		sleep( 1 );
 	}
 
 	// Render the actual table.
 	render_paginated_table( $query );
 }
+
+add_action( 'jcrm_mailpoet_sync_scheduled_hook', 'zbs_mailpoet_start_sync' );
 
 /**
  * Inserts from MailPoet into Jetpack CRM
@@ -35,8 +47,11 @@ function zbs_mailpoet_sync_init() {
 function zbs_mailpoet_start_sync( $query ) {
 	global $wpdb;
 
-	$query = $query . ' LIMIT 350'; // LIMIT for testing.
+	//$query = $query . ' LIMIT 120'; // LIMIT for testing.
 	$subscribers = $wpdb->get_results( $query );
+	
+	$pending = count($subscribers);
+	update_option( 'jpcrm_mailpoet_sync_status', "Syncing $pending subscribers" );
 
 	foreach ( $subscribers as $key => $subscriber ) {
 
@@ -50,10 +65,6 @@ function zbs_mailpoet_start_sync( $query ) {
 		$fname  = $subscriber->first_name;
 		$lname  = $subscriber->last_name;
 		$status = $subscriber->status;
-
-		// if subscriber already exists on synced table.
-		if ( false ) {
-		}
 
 		$contact_id = zeroBS_integrations_addOrUpdateCustomer(
 			'api',
@@ -72,10 +83,8 @@ function zbs_mailpoet_start_sync( $query ) {
 		);
 
 		add_or_update_in_sync_table( $contact_id, $subscriber->id, $status, $subscriber->synced_id );
-		
-		// avoid timeout
-		// sleep(1);
 	}
+	update_option( 'jpcrm_mailpoet_sync_status', "Done" );
 }
 
 function add_or_update_in_sync_table( $zbs_contact_id, $mailpoet_subscriber_id, $status, $synced_id ) {
@@ -110,7 +119,7 @@ function add_or_update_in_sync_table( $zbs_contact_id, $mailpoet_subscriber_id, 
 
 	if ( ! $successful_update ) {
 		// TODO: Throw error.
-		// var_dump( 'Not successful', $successful_update );
+		var_dump( 'Not successful', $successful_update );
 	}
 }
 
@@ -121,30 +130,38 @@ function add_or_update_in_sync_table( $zbs_contact_id, $mailpoet_subscriber_id, 
 function render_paginated_table( $query ) {
 	global $wpdb;
 
+	$current_sync_status = get_option( 'jpcrm_mailpoet_sync_status' );
+	$btn_disabled = strpos( strtolower( $current_sync_status ), 'syncing') === false ? '' : 'disabled';
+
 	echo '<div class="mailpoet-sync-wrapper">';
 	echo '<h1>MailPoet - Jetpack CRM Sync Tool</h1>';
 
 	echo '<form method="POST" class="mailpoet-sync-btn-wrapper">';
 	echo '<input type="hidden" name="startsync" value="1">';
-	echo '<button id="btnSync" type="submit" class="button button-primary mailpoet-sync-btn">Start Sync</button>';
-	echo '<div id="syncMessage" style="display:none">This might take a while. Depending on the amount of data, it can take from a few minutes to a few hours.</div>';
+	echo '<button id="btnSync" type="submit" ' . $btn_disabled . ' class="button button-primary mailpoet-sync-btn">Start Sync</button>';
+	echo '<div id="syncMessage" style="display:none;margin-top:1rem;">This might take a while.</div>';
 	echo '<script>';
 	echo 'document.querySelector("#btnSync").addEventListener("click", () => { document.querySelector("#syncMessage").style.display = "block" })';
 	echo '</script>';
 	echo '</form>';
 
+	// Query for pagination
 	$total_query = "SELECT COUNT(1) FROM (${query}) AS combined_table";
 	$total       = $wpdb->get_var( $total_query );
-
-	$items_per_page = 10;
+	$items_per_page = 25;
 	$page           = isset( $_GET['cpage'] ) ? abs( (int) $_GET['cpage'] ) : 1;
 	$offset         = ( $page * $items_per_page ) - $items_per_page;
 
 	$final_query = "{$query} ORDER BY synced_id LIMIT ${offset}, ${items_per_page}";
 	$subscribers = $wpdb->get_results( $final_query );
 
-	echo '<p><em>Unsynced contacts are displayed first.</em></p>';
+	if ( ! empty( $current_sync_status ) && $current_sync_status !== 'Done' ) {
+		echo "<p>Current sync status: $current_sync_status. Refresh the page to see latest status.</p>";
+	}
 
+	echo 'Pending to sync: ' . count_pending_sync();
+	
+	echo '<p><em>Unsynced contacts are displayed first.</em></p>';
 	echo '<table class="wp-list-table widefat striped table-view-list mailpoet-subscribers">';
 	echo '<tr>';
 	echo '<th>Synced</th>';
@@ -183,4 +200,15 @@ function render_paginated_table( $query ) {
 	echo '</div>';
 	echo '</div>';
 	echo '</div>'; // echo '</div>';
+}
+
+function count_pending_sync() {
+	global $wpdb;
+	$query = 'SELECT COUNT(s.id) as total
+		FROM ' . $wpdb->prefix . 'mailpoet_subscribers AS s 
+		LEFT OUTER JOIN ' . $wpdb->prefix . 'zbs_mailpoet_sync AS mps 
+		ON s.id = mps.mailpoet_subscriber_id
+		WHERE mps.id IS NULL OR s.status COLLATE utf8mb4_unicode_ci != mps.last_status';
+	$result = $wpdb->get_results( $query );
+	return $result[0]->total;
 }
