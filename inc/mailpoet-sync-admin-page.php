@@ -1,10 +1,9 @@
 <?php
 
-add_action( 'admin_menu', 'test_plugin_setup_menu' );
+add_action( 'admin_menu', 'jcrm_mailpoet_sync_setup_menu' );
 
-function test_plugin_setup_menu() {
+function jcrm_mailpoet_sync_setup_menu() {
 	$menu = add_menu_page( 'MailPoet Jetpack CRM Sync Page', 'MailPoet Jetpack CRM Sync', 'manage_options', 'zbs-mailpoet-sync', 'zbs_mailpoet_sync_init' );
-
 	add_action( 'admin_print_styles-' . $menu, 'mailpoet_crm_sync_custom_css' );
 }
 
@@ -12,6 +11,10 @@ function mailpoet_crm_sync_custom_css() {
 	wp_enqueue_style( 'mailpoet_crm_sync', ZEROBSCRM_MAILPOET_URL . '/assets/admin.css' );
 }
 
+/**
+ * zbs_mailpoet_sync_init
+ * Renders the table, and also handles form submit
+ */
 function zbs_mailpoet_sync_init() {
 	global $wpdb;
 	$query = 'SELECT 
@@ -39,17 +42,20 @@ function zbs_mailpoet_sync_init() {
 	render_paginated_table( $query );
 }
 
-add_action( 'jcrm_mailpoet_sync_scheduled_hook', 'zbs_mailpoet_start_sync' );
 
 /**
+ * zbs_mailpoet_start_sync
  * Inserts from MailPoet into Jetpack CRM
+ * Since this process can take a while, it's added as an action and invoked
+ * by wp_schedule_single_event(), after a form submit
  */
+add_action( 'jcrm_mailpoet_sync_scheduled_hook', 'zbs_mailpoet_start_sync' );
 function zbs_mailpoet_start_sync( $query ) {
 	global $wpdb;
 
 	//$query = $query . ' LIMIT 120'; // LIMIT for testing.
 	$subscribers = $wpdb->get_results( $query );
-	
+
 	$pending = count($subscribers);
 	update_option( 'jpcrm_mailpoet_sync_status', "Syncing $pending subscribers" );
 
@@ -87,6 +93,11 @@ function zbs_mailpoet_start_sync( $query ) {
 	update_option( 'jpcrm_mailpoet_sync_status', "Done" );
 }
 
+/**
+ * add_or_update_in_sync_table
+ * This function is invoked for each subscriber in MailPoet
+ * It's helper function that keeps track of what's already synced. Data is stored in the table wp_zbs_mailpoet_sync
+ */
 function add_or_update_in_sync_table( $zbs_contact_id, $mailpoet_subscriber_id, $status, $synced_id ) {
 	global $wpdb;
 
@@ -124,8 +135,8 @@ function add_or_update_in_sync_table( $zbs_contact_id, $mailpoet_subscriber_id, 
 }
 
 /**
- * Renders a paginated table with subscribers
- * and their synced status
+ * render_paginated_table
+ * Renders a paginated table with subscribers and their synced status
  */
 function render_paginated_table( $query ) {
 	global $wpdb;
@@ -197,11 +208,17 @@ function render_paginated_table( $query ) {
 			'current'   => $page,
 		)
 	);
-	echo '</div>';
-	echo '</div>';
-	echo '</div>'; // echo '</div>';
+	echo '</div>'; // pagination-links.
+	echo '</div>'; // tablenav-pages.
+	echo '</div>'; // mailpoet-sync-wrapper.
 }
 
+/**
+ * count_pending_sync
+ * Helper function that counts how many MailPoet subscribers are still
+ * missing to sync.
+ * @return string total
+ */
 function count_pending_sync() {
 	global $wpdb;
 	$query = 'SELECT COUNT(s.id) as total
