@@ -1,6 +1,7 @@
 <?php
 
 add_action( 'admin_menu', 'jcrm_mailpoet_sync_setup_menu' );
+add_action( 'jcrm_mailpoet_sync_scheduled_hook', 'zbs_mailpoet_start_sync' );
 
 function jcrm_mailpoet_sync_setup_menu() {
 	$menu = add_menu_page( 'MailPoet Jetpack CRM Sync Page', 'MailPoet Jetpack CRM Sync', 'manage_options', 'zbs-mailpoet-sync', 'zbs_mailpoet_sync_init' );
@@ -36,7 +37,7 @@ function zbs_mailpoet_sync_init() {
 		$pending     = count($subscribers);
 		update_option( 'jpcrm_mailpoet_sync_pending', $pending );
 		wp_clear_scheduled_hook( 'jcrm_mailpoet_sync_scheduled_hook' );
-		wp_schedule_single_event( time() - 60, 'jcrm_mailpoet_sync_scheduled_hook', array( $subscribers ) );
+		wp_schedule_single_event( time(), 'jcrm_mailpoet_sync_scheduled_hook', array( $subscribers ) );
 	}
 
 	// Render the actual table.
@@ -50,7 +51,6 @@ function zbs_mailpoet_sync_init() {
  * is invoked by wp_schedule_single_event() during a form submit
  * * @param string $subscribers
  */
-add_action( 'jcrm_mailpoet_sync_scheduled_hook', 'zbs_mailpoet_start_sync' );
 function zbs_mailpoet_start_sync( $subscribers ) {
 	foreach ( $subscribers as $key => $subscriber ) {
 
