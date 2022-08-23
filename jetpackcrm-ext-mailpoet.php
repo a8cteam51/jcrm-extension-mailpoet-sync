@@ -22,9 +22,11 @@ define( 'ZEROBSCRM_MAILPOET_URL', plugin_dir_url( __FILE__ ) );
 // } Load only if ZBS is loaded
 add_action( 'after_zerobscrm_settings_init', 'zeroBSCRM_load_mailpoet', 11 );
 function zeroBSCRM_load_mailpoet() {
-	require_once ZEROBSCRM_MAILPOET_PATH . 'inc/mailpoet-sync-database.php';
 	require_once ZEROBSCRM_MAILPOET_PATH . 'inc/mailpoet-sync-admin-page.php';
+	require_once ZEROBSCRM_MAILPOET_PATH . 'inc/mailpoet-sync-segments.php';
 }
+
+wp_enqueue_script( 'jcrm_segment_to_mailpoet', ZEROBSCRM_MAILPOET_URL . '/assets/jcrm_segment_to_mailpoet.js' );
 
 /**
  * Database setup.
